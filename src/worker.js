@@ -15,7 +15,7 @@ async function loadAll(db) {
     doctors: doctors.results,
     orders: orders.results.map((o) => ({
       id: o.id, doctorId: o.doctor_id, patient: o.patient, date: o.date, due: o.due,
-      types: JSON.parse(o.types), color: o.color, template: o.template, units: o.units, desc: o.description,
+      types: JSON.parse(o.types), color: o.color, template: o.template, units: o.units, desc: o.description, delivered: o.delivered || 0,
     })),
     prices: Object.fromEntries(prices.results.map((p) => [p.work_type, p.amount])),
     notes: notes.results.map((n) => ({ id: n.id, doctorId: n.doctor_id, patient: n.patient, text: n.text, date: n.date })),
@@ -66,6 +66,31 @@ export default {
         await db.prepare(
           "INSERT INTO prices (work_type, amount) VALUES (?, ?) ON CONFLICT(work_type) DO UPDATE SET amount = excluded.amount"
         ).bind(type, Number(b.amount) || 0).run();
+        return json({ ok: true });
+      }
+
+      let mm;
+      if ((mm = p.match(/^\/api\/doctors\/([^/]+)$/)) && m === "DELETE") {
+        await db.batch([
+          db.prepare("DELETE FROM notes WHERE doctor_id = ?").bind(mm[1]),
+          db.prepare("DELETE FROM orders WHERE doctor_id = ?").bind(mm[1]),
+          db.prepare("DELETE FROM doctors WHERE id = ?").bind(mm[1]),
+        ]);
+        return json({ ok: true });
+      }
+      if ((mm = p.match(/^\/api\/orders\/([^/]+)$/))) {
+        if (m === "DELETE") {
+          await db.prepare("DELETE FROM orders WHERE id = ?").bind(mm[1]).run();
+          return json({ ok: true });
+        }
+        if (m === "PATCH") {
+          const b = await request.json();
+          await db.prepare("UPDATE orders SET delivered = ? WHERE id = ?").bind(b.delivered ? 1 : 0, mm[1]).run();
+          return json({ ok: true });
+        }
+      }
+      if ((mm = p.match(/^\/api\/notes\/([^/]+)$/)) && m === "DELETE") {
+        await db.prepare("DELETE FROM notes WHERE id = ?").bind(mm[1]).run();
         return json({ ok: true });
       }
 
